@@ -1,6 +1,9 @@
 import os
+import re
 import tempfile
 import threading
+import time
+import wave
 
 os.environ.setdefault("GENIE_DATA_DIR", "/home/swlinux/GenieData")
 os.environ["HF_HUB_ENABLE_PROGRESS_BAR"] = "0"
@@ -25,6 +28,9 @@ LANGUAGE = os.getenv("AIRI_TTS_LANGUAGE", "ko")
 SPOKEN_LOG = os.getenv("AIRI_SPOKEN_LOG", "/home/swlinux/airi_spoken.log")
 
 _lock = threading.Lock()
+_busy_lock = threading.Lock()
+_busy = False
+_busy_until = 0.0
 _ready = False
 
 
@@ -34,6 +40,17 @@ class SpeechRequest(BaseModel):
     voice: str = CHARACTER
     response_format: str = "wav"
     speed: float = 1.0
+
+
+def _clean_spoken_text(text: str) -> str:
+    text = text.replace("\ufeff", "")
+    text = re.sub(r"^\s*(?:\*\*)?(?:시작|끝|start|end)(?:\*\*)?\s*$", "", text, flags=re.IGNORECASE | re.MULTILINE)
+    text = re.sub(r"!?\[[^\]]*\]\([^)]*\)", "", text)
+    text = re.sub(r"\[이미지로\]", "", text)
+    text = re.sub(r"^\s*(?:>{1,}|#{1,6})\s?", "", text, flags=re.MULTILINE)
+    text = re.sub(r"\*\*|__|~~|`", "", text)
+    text = re.sub(r"[^\w\s.,!?%\-—–~…:;()'\"가-힣]", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _ensure_loaded():
@@ -72,10 +89,20 @@ def models():
 
 @app.post("/v1/audio/speech")
 def speech(req: SpeechRequest):
+    global _busy, _busy_until
+
     if not req.input.strip():
         return Response(status_code=400)
 
-    spoken_text = req.input.strip()
+    spoken_text = _clean_spoken_text(req.input)
+    if not spoken_text:
+        return Response(status_code=400)
+
+    with _busy_lock:
+        if _busy or time.monotonic() < _busy_until:
+            return Response(status_code=409)
+        _busy = True
+
     print(f"[은랑] {spoken_text}", flush=True)
     try:
         with open(SPOKEN_LOG, "a", encoding="utf-8") as f:
@@ -83,17 +110,30 @@ def speech(req: SpeechRequest):
     except OSError:
         pass
 
-    with _lock:
-        _ensure_loaded()
-        fd, path = tempfile.mkstemp(suffix=".wav")
-        os.close(fd)
-        genie.tts(
-            character_name=CHARACTER,
-            text=spoken_text,
-            play=False,
-            split_sentence=False,
-            save_path=path,
-        )
+    try:
+        with _lock:
+            _ensure_loaded()
+            fd, path = tempfile.mkstemp(suffix=".wav")
+            os.close(fd)
+            genie.tts(
+                character_name=CHARACTER,
+                text=spoken_text,
+                play=False,
+                split_sentence=False,
+                save_path=path,
+            )
+
+        with wave.open(path, "rb") as wav_file:
+            duration = wav_file.getnframes() / wav_file.getframerate()
+
+        with _busy_lock:
+            _busy = False
+            _busy_until = time.monotonic() + duration
+    except Exception:
+        with _busy_lock:
+            _busy = False
+            _busy_until = 0.0
+        raise
 
     with open(path, "rb") as f:
         data = f.read()

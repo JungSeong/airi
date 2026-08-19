@@ -9,6 +9,30 @@ const config = {
   spontaneousMinSec: Number(process.env.AIRI_SPONTANEOUS_MIN_S ?? 60),
   spontaneousMaxSec: Number(process.env.AIRI_SPONTANEOUS_MAX_S ?? 300),
   spokenLogPath: process.env.AIRI_SPOKEN_LOG || `${home}/airi_spoken.log`,
+  ttsHealthUrl: process.env.AIRI_TTS_HEALTH_URL || 'http://127.0.0.1:8000/health',
+}
+
+const spontaneousPrompts = [
+  { headline: '은랑 파티 부팅', note: '게임 파티가 멈춰 있어. 은랑 LV.999가 먼저 짧은 한 마디로 분위기를 깨워줘.' },
+  { headline: '은랑 새 스테이지', note: '새 스테이지 탐색 중이야. 은랑 LV.999가 짧고 화려하게 말을 걸어.' },
+  { headline: '은랑 파티 체크', note: '파티원이 대기 중이야. 은랑 LV.999가 게임 용어로 가볍게 한 마디 해줘.' },
+  { headline: '은랑 도발', note: '화면 앞 사용자에게 은랑 LV.999가 짧은 도발이나 칭찬 한 마디 해줘.' },
+  { headline: '은랑 레이드 대기', note: '레이드 대기 중이야. 은랑 LV.999가 파티 분위기를 잡는 짧은 한 마디 해줘.' },
+  { headline: '은랑 제안', note: '은랑 LV.999가 지금 할 만한 것을 제안하는 짧은 한 마디 해줘.' },
+  { headline: '은랑 리액션', note: '사용자가 멍하니 있을 때 은랑 LV.999가 짧게 리액션해줘.' },
+  { headline: '은랑 생각', note: '은랑 LV.999가 갑자기 떠오른 생각을 짧게 던져줘.' },
+]
+
+let lastPromptIndex = -1
+
+function randomPrompt() {
+  let index
+  do {
+    index = Math.floor(Math.random() * spontaneousPrompts.length)
+  } while (index === lastPromptIndex)
+
+  lastPromptIndex = index
+  return spontaneousPrompts[index]
 }
 
 function readToken() {
@@ -30,6 +54,16 @@ function randomBetween(min, max) {
 
 function log(message) {
   console.log(`[${new Date().toISOString()}] ${message}`)
+}
+
+async function isTtsReady() {
+  try {
+    const response = await fetch(config.ttsHealthUrl, { signal: AbortSignal.timeout(1_500) })
+    return response.ok
+  }
+  catch {
+    return false
+  }
 }
 
 function parseServerMessage(text) {
@@ -150,6 +184,7 @@ class AiriBridge {
       return false
 
     const eventId = nanoid()
+    const prompt = randomPrompt()
 
     return this.sendRaw({
       type: 'spark:notify',
@@ -159,8 +194,8 @@ class AiriBridge {
         lane: 'codex',
         kind: 'reminder',
         urgency: 'immediate',
-        headline: '은랑 자발 발화',
-        note: '사용자가 조용한 상태야. 지금 바로 사용자에게 은랑 LV.999 말투로 짧게 한 마디 말해줘. 반드시 텍스트로 답변해.',
+        headline: prompt.headline,
+        note: `${prompt.note} 반드시 은랑 LV.999 말투의 짧은 텍스트로 답변해. 매번 다른 시작으로 말하고, '조용하네', '할 말 없어' 같은 관용구는 쓰지 마. 마크다운 기호(**, ##, >>, [이미지로])나 특수 기호 없이 순수 한국어 문장만 출력해.`,
         ttlMs: 30_000,
         requiresAck: false,
         destinations: ['*'],
@@ -181,17 +216,29 @@ class AiriBridge {
 
 const bridge = new AiriBridge({ url: config.wsUrl, token: readToken() })
 
-function scheduleSpontaneous() {
+async function scheduleSpontaneous() {
   const delay = randomBetween(config.spontaneousMinSec, config.spontaneousMaxSec) * 1_000
-  setTimeout(() => {
-    if (bridge.sendSparkNotify()) {
-      log('sent spontaneous spark')
+  setTimeout(async () => {
+    if (await isTtsReady()) {
+      if (bridge.sendSparkNotify()) {
+        log('sent spontaneous spark')
+      }
+    }
+    else {
+      log('TTS not ready; skipping spontaneous spark. Run ./airi --silver_wolf start')
     }
     scheduleSpontaneous()
   }, delay)
 }
 
-let spokenOffset = 0
+let spokenOffset = (() => {
+  try {
+    return fs.readFileSync(config.spokenLogPath, 'utf8').length
+  }
+  catch {
+    return 0
+  }
+})()
 
 function syncSpokenLog() {
   let data

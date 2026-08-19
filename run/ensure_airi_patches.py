@@ -8,6 +8,31 @@ import sys
 ASAR = os.environ.get("AIRI_ASAR", "/opt/AIRI/resources/app.asar")
 ALLOW_TARGET = "out/renderer/assets/providers-BW0Se-st.js"
 SPEECH_TARGET = "out/renderer/assets/speech-runtime-D7bduiCD.js"
+SPARK_POLICY_OLD = (
+    b"\t\tallowNoResponse: 0==1,\n"
+    b"\t\tallowSparkCommand: true,\n"
+    b"\t\tsupportsTools: true,\n"
+    b"\t\twaitForTools: true,"
+)
+SPARK_POLICY_NEW = (
+    b"\t\tallowNoResponse: 0==1,\n"
+    b"\t\tallowSparkCommand: !1,  \n"
+    b"\t\tsupportsTools: !1,  \n"
+    b"\t\twaitForTools: !1,  "
+)
+LLM_TOOL_RETRY_OLD = (
+    b"\t\t\tif (isToolRelatedError(err)) {\n"
+    b'\t\t\t\tconsole.warn(`[llm] Auto-disabling tools for "${key}" due to tool-related error`);\n'
+    b"\t\t\t\ttoolsCompatibility.value.set(key, false);\n"
+    b"\t\t\t}"
+)
+LLM_TOOL_RETRY_NEW = (
+    b"\t\t\tif (isToolRelatedError(err)) {\n"
+    b'\t\t\t\tconsole.warn(`[llm] tools disabled for "${key}"`);\n'
+    b"\t\t\t\ttoolsCompatibility.value.set(key, false);\n"
+    b"\t\t\t\treturn await runStream();\n"
+    b"\t\t\t}  "
+)
 
 
 def read_file(asar: str, target: str) -> tuple[int, int, bytes]:
@@ -42,7 +67,19 @@ def replace_exact(asar: str, start: int, data: bytes, old: bytes, new: bytes) ->
 
 def speech_patched(data: bytes) -> bool:
     lines = data.split(b"\n")
-    return b"new Set([])" in lines[800] and b"boost = 0" in lines[803]
+    return (
+        b"new Set([])" in lines[800]
+        and b"boost = 0" in lines[803]
+        and b"flush = false" in lines[822]
+    )
+
+
+def spark_policy_patched(data: bytes) -> bool:
+    return SPARK_POLICY_NEW in data
+
+
+def llm_tool_retry_patched(data: bytes) -> bool:
+    return LLM_TOOL_RETRY_NEW in data
 
 
 def apply_speech(asar: str, start: int, data: bytes) -> bool:
@@ -57,6 +94,11 @@ def apply_speech(asar: str, start: int, data: bytes) -> bool:
             803,
             b"\tconst { boost = 0, minimumWords=9e9, maximumWords=9e9 } = options ?? {} ;",
             b"boost = 0",
+        ),
+        (
+            822,
+            b"\t\tconst flush = false;",
+            b"flush = false",
         ),
     ]
     changed = False
@@ -81,8 +123,10 @@ def main() -> int:
 
     allow_ok = b"allowNoResponse: 0==1" in allow_data
     speech_ok = speech_patched(speech_data)
+    spark_ok = spark_policy_patched(allow_data)
+    llm_retry_ok = llm_tool_retry_patched(allow_data)
 
-    if allow_ok and speech_ok:
+    if allow_ok and speech_ok and spark_ok and llm_retry_ok:
         print("airi patches ok")
         return 0
 
@@ -97,6 +141,24 @@ def main() -> int:
             allow_data,
             b"allowNoResponse: true",
             b"allowNoResponse: 0==1",
+        )
+
+    if not spark_ok:
+        replace_exact(
+            ASAR,
+            allow_start,
+            allow_data,
+            SPARK_POLICY_OLD,
+            SPARK_POLICY_NEW,
+        )
+
+    if not llm_retry_ok:
+        replace_exact(
+            ASAR,
+            allow_start,
+            allow_data,
+            LLM_TOOL_RETRY_OLD,
+            LLM_TOOL_RETRY_NEW,
         )
 
     if not speech_ok:
