@@ -1,0 +1,6 @@
+.venv/
+assets/silver_wolf_genie_onnx/
+assets/silver_wolf_clean_voice/
+airi_spoken.log
+__pycache__/
+*.pyc

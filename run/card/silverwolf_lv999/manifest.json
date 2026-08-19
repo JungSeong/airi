@@ -1,0 +1,9 @@
+{
+  "format": "airi-character-card",
+  "version": 1,
+  "createdAt": "2026-08-19T00:00:00.000Z",
+  "card": {
+    "path": "card.json",
+    "spec": "chara_card_v3"
+  }
+}

@@ -1,0 +1,180 @@
+#!/usr/bin/env bash
+set -u
+
+RUN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AIRI_BIN="${AIRI_BIN:-/opt/AIRI/airi}"
+if [ -n "${AIRI_TTS_PYTHON:-}" ]; then
+  TTS_ENV="$AIRI_TTS_PYTHON"
+elif [ -x "$RUN_DIR/genie-tts-env/bin/python" ]; then
+  TTS_ENV="$RUN_DIR/genie-tts-env/bin/python"
+else
+  TTS_ENV="$RUN_DIR/.venv/bin/python"
+fi
+TTS_PY="$RUN_DIR/silver_wolf_tts_server.py"
+BRIDGE_JS="$RUN_DIR/airi_codex_bridge.mjs"
+GENIE_DATA_DIR="${GENIE_DATA_DIR:-$HOME/GenieData}"
+SPONTANEOUS_MIN_S="${AIRI_SPONTANEOUS_MIN_S:-60}"
+SPONTANEOUS_MAX_S="${AIRI_SPONTANEOUS_MAX_S:-300}"
+TMUX_SESSION="airi"
+BRIDGE_TMUX_SESSION="airi-bridge"
+
+ACTION="start"
+CHARACTER="silver_wolf"
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    start|stop|status)
+      ACTION="$1"
+      ;;
+    --silver_wolf|--silverwolf)
+      CHARACTER="silver_wolf"
+      ;;
+    --march7|--march_7)
+      CHARACTER="march7"
+      ;;
+    --*)
+      echo "unknown option: $1" >&2
+      exit 2
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
+configure_character() {
+  case "$CHARACTER" in
+    silver_wolf)
+      CHARACTER_NAME="은랑 LV.999"
+      TTS_CHARACTER="silverwolf_lv999"
+      TTS_MODEL_DIR="${AIRI_TTS_MODEL_DIR:-$RUN_DIR/assets/silver_wolf_genie_onnx}"
+      TTS_REF_AUDIO="${AIRI_TTS_REF_AUDIO:-$RUN_DIR/assets/silver_wolf_clean_voice/extracted/archive_silverwolflv999_1.wav}"
+      TTS_REF_TEXT="${AIRI_TTS_REF_TEXT:-$RUN_DIR/assets/silver_wolf_clean_voice/extracted/archive_silverwolflv999_1.lab}"
+      TTS_LANGUAGE="ko"
+      ;;
+    march7)
+      CHARACTER_NAME="March 7th"
+      TTS_CHARACTER="march7"
+      TTS_MODEL_DIR="${AIRI_MARCH7_MODEL_DIR:-$RUN_DIR/assets/march7_genie_onnx}"
+      TTS_REF_AUDIO="${AIRI_MARCH7_REF_AUDIO:-$RUN_DIR/assets/march7_voice/ref.wav}"
+      TTS_REF_TEXT="${AIRI_MARCH7_REF_TEXT:-$RUN_DIR/assets/march7_voice/ref.txt}"
+      TTS_LANGUAGE="ko"
+      ;;
+  esac
+}
+
+check_character_files() {
+  local missing=""
+  [ -d "$TTS_MODEL_DIR" ] || missing="$missing $TTS_MODEL_DIR"
+  [ -f "$TTS_REF_AUDIO" ] || missing="$missing $TTS_REF_AUDIO"
+  [ -f "$TTS_REF_TEXT" ] || missing="$missing $TTS_REF_TEXT"
+
+  if [ -n "$missing" ]; then
+    echo "character=$CHARACTER_NAME missing:$missing" >&2
+    return 1
+  fi
+}
+
+stop_processes() {
+  ps -eo pid=,args= |
+    awk '/\/opt\/AIRI\/airi|silver_wolf_tts_server\.py|airi_codex_bridge\.mjs/ && !/awk/ {print $1}' |
+    xargs -r kill -9 2>/dev/null || true
+}
+
+wait_port() {
+  local port="$1"
+  for _ in $(seq 1 40); do
+    if ss -ltn 2>/dev/null | grep -q ":${port} "; then
+      return 0
+    fi
+    sleep 0.5
+  done
+  return 1
+}
+
+start_all() {
+  configure_character
+  if ! check_character_files; then
+    exit 1
+  fi
+
+  if [ -z "${DISPLAY:-}" ]; then
+    echo "DISPLAY not set. Run from desktop terminal." >&2
+    exit 1
+  fi
+
+  stop_processes
+  command -v tmux >/dev/null 2>&1 && tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+  for f in SingletonLock SingletonCookie SingletonSocket; do
+    p="/home/swlinux/.config/ai.moeru.airi/$f"
+    if [ -L "$p" ] || [ -e "$p" ]; then
+      unlink "$p" 2>/dev/null || true
+    fi
+  done
+
+  if command -v tmux >/dev/null 2>&1; then
+    tmux new-session -d -s "$TMUX_SESSION" -n tts \
+      "env GENIE_DATA_DIR='$GENIE_DATA_DIR' AIRI_TTS_CHARACTER='$TTS_CHARACTER' AIRI_TTS_MODEL_DIR='$TTS_MODEL_DIR' AIRI_TTS_REF_AUDIO='$TTS_REF_AUDIO' AIRI_TTS_REF_TEXT='$TTS_REF_TEXT' AIRI_TTS_LANGUAGE='$TTS_LANGUAGE' '$TTS_ENV' '$TTS_PY'"
+    echo "character: $CHARACTER_NAME"
+    echo "tmux session: $TMUX_SESSION"
+  else
+    nohup env \
+      GENIE_DATA_DIR="$GENIE_DATA_DIR" \
+      AIRI_TTS_CHARACTER="$TTS_CHARACTER" \
+      AIRI_TTS_MODEL_DIR="$TTS_MODEL_DIR" \
+      AIRI_TTS_REF_AUDIO="$TTS_REF_AUDIO" \
+      AIRI_TTS_REF_TEXT="$TTS_REF_TEXT" \
+      AIRI_TTS_LANGUAGE="$TTS_LANGUAGE" \
+      "$TTS_ENV" "$TTS_PY" >/tmp/airi_tts.log 2>&1 &
+  fi
+
+  if ! wait_port 8000; then
+    echo "TTS failed to start" >&2
+    exit 1
+  fi
+
+  if command -v tmux >/dev/null 2>&1; then
+    tmux new-window -t "$TMUX_SESSION" -n airi \
+      "env -u ELECTRON_RUN_AS_NODE '$AIRI_BIN' --no-sandbox"
+  else
+    nohup env -u ELECTRON_RUN_AS_NODE "$AIRI_BIN" --no-sandbox >/tmp/airi.log 2>&1 &
+  fi
+
+  if ! wait_port 6121; then
+    echo "AIRI failed to start" >&2
+    exit 1
+  fi
+
+  if command -v tmux >/dev/null 2>&1; then
+    tmux kill-session -t "$BRIDGE_TMUX_SESSION" 2>/dev/null || true
+    tmux new-session -d -s "$BRIDGE_TMUX_SESSION" \
+      "env AIRI_SPONTANEOUS_MIN_S='$SPONTANEOUS_MIN_S' AIRI_SPONTANEOUS_MAX_S='$SPONTANEOUS_MAX_S' node '$BRIDGE_JS'"
+    echo "attach bridge: tmux attach -t $BRIDGE_TMUX_SESSION"
+  else
+    nohup env \
+      AIRI_SPONTANEOUS_MIN_S="$SPONTANEOUS_MIN_S" \
+      AIRI_SPONTANEOUS_MAX_S="$SPONTANEOUS_MAX_S" \
+      node "$BRIDGE_JS" >/tmp/airi_bridge.log 2>&1 &
+  fi
+}
+
+status_all() {
+  echo "character: ${CHARACTER:-}"
+  echo "--- ports ---"
+  ss -ltn 2>/dev/null | grep -E ':6121|:8000' || echo "none"
+  echo "--- processes ---"
+  ps -eo pid,args | grep -E '/opt/AIRI/airi|silver_wolf_tts_server\.py|airi_codex_bridge\.mjs' | grep -v grep || echo "none"
+}
+
+case "$ACTION" in
+  start) start_all ;;
+  stop)
+    stop_processes
+    command -v tmux >/dev/null 2>&1 && tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+    command -v tmux >/dev/null 2>&1 && tmux kill-session -t "$BRIDGE_TMUX_SESSION" 2>/dev/null || true
+    echo "stopped"
+    ;;
+  status) status_all ;;
+esac
