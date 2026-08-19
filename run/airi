@@ -100,6 +100,16 @@ start_all() {
     exit 1
   fi
 
+  if ! "$RUN_DIR/ensure_airi_patches.py" >/dev/null 2>&1; then
+    echo "AIRI patch required. sudo password may be requested."
+    if command -v sudo >/dev/null 2>&1; then
+      sudo "$RUN_DIR/ensure_airi_patches.py" || exit 1
+    else
+      echo "run: sudo python3 $RUN_DIR/ensure_airi_patches.py" >&2
+      exit 1
+    fi
+  fi
+
   if [ -z "${DISPLAY:-}" ]; then
     echo "DISPLAY not set. Run from desktop terminal." >&2
     exit 1
