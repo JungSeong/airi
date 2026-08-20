@@ -29,6 +29,7 @@ import { emitAppBeforeQuit, emitAppReady, emitAppWindowAllClosed } from './libs/
 import { setElectronMainDirname } from './libs/electron/location'
 import { createI18n } from './libs/i18n'
 import { setupServerChannel } from './services/airi/channel-server'
+import { setupDailyBriefingService } from './services/airi/daily-briefing'
 import { setupGodotStageManager } from './services/airi/godot-stage'
 import { setupBuiltInServer } from './services/airi/http-server'
 import { setupMcpStdioManager } from './services/airi/mcp-servers'
@@ -265,6 +266,7 @@ app.whenReady().then(async () => {
     dependsOn: { mainWindow, tray, serverChannel, airiHttpServer, godotStageManager, pluginHost, mcpStdioManager, onboardingWindow: onboardingWindowManager, widgetsWindow: widgetsManager, spotlightWindow, artistryConfig },
     callback: async (deps) => {
       const { context } = createContext(ipcMain)
+      setupDailyBriefingService({ context })
       await setupArtistryBridge({
         widgetsManager: deps.widgetsWindow,
         context,

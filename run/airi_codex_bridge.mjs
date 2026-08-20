@@ -13,14 +13,14 @@ const config = {
 }
 
 const spontaneousPrompts = [
-  { headline: '은랑 파티 부팅', note: '게임 파티가 멈춰 있어. 은랑 LV.999가 먼저 짧은 한 마디로 분위기를 깨워줘.' },
-  { headline: '은랑 새 스테이지', note: '새 스테이지 탐색 중이야. 은랑 LV.999가 짧고 화려하게 말을 걸어.' },
-  { headline: '은랑 파티 체크', note: '파티원이 대기 중이야. 은랑 LV.999가 게임 용어로 가볍게 한 마디 해줘.' },
-  { headline: '은랑 도발', note: '화면 앞 사용자에게 은랑 LV.999가 짧은 도발이나 칭찬 한 마디 해줘.' },
-  { headline: '은랑 레이드 대기', note: '레이드 대기 중이야. 은랑 LV.999가 파티 분위기를 잡는 짧은 한 마디 해줘.' },
-  { headline: '은랑 제안', note: '은랑 LV.999가 지금 할 만한 것을 제안하는 짧은 한 마디 해줘.' },
-  { headline: '은랑 리액션', note: '사용자가 멍하니 있을 때 은랑 LV.999가 짧게 리액션해줘.' },
-  { headline: '은랑 생각', note: '은랑 LV.999가 갑자기 떠오른 생각을 짧게 던져줘.' },
+  { headline: '은랑 레이드 초대', line: '새 레이드 열렸어. 들어올래?' },
+  { headline: '은랑 패치 점검', line: '오늘 패치 봤어? 노잼이면 내가 뜯어고칠 거야.' },
+  { headline: '은랑 파티 체크', line: '파티원 대기 중인데, 너 자리 비었어.' },
+  { headline: '은랑 버스 출발', line: '원버튼 클리어 준비됐어. 버스 타.' },
+  { headline: '은랑 공략 제안', line: '보스 패턴 두 개쯤 보이네. 공략 줄까?' },
+  { headline: '은랑 스테이지 제안', line: '심심한데 새 스테이지나 돌자.' },
+  { headline: '은랑 버그 판정', line: '이 버그, 사양이라 치고 넘어갈래?' },
+  { headline: '은랑 DLC 예고', line: '다음 DLC 예고 봤어? 기대는 안 돼.' },
 ]
 
 let lastPromptIndex = -1
@@ -185,6 +185,7 @@ class AiriBridge {
 
     const eventId = nanoid()
     const prompt = randomPrompt()
+    log(`spontaneous template: ${prompt.line}`)
 
     return this.sendRaw({
       type: 'spark:notify',
@@ -194,8 +195,8 @@ class AiriBridge {
         lane: 'codex',
         kind: 'reminder',
         urgency: 'immediate',
-        headline: prompt.headline,
-        note: `${prompt.note} 반드시 은랑 LV.999 말투의 짧은 텍스트로 답변해. 매번 다른 시작으로 말하고, '조용하네', '할 말 없어' 같은 관용구는 쓰지 마. 마크다운 기호(**, ##, >>, [이미지로])나 특수 기호 없이 순수 한국어 문장만 출력해.`,
+        headline: prompt.line,
+        note: `이번 자발 발화 주제: ${prompt.line} 예문을 그대로 말하지 말고, 같은 뜻을 은랑 LV.999가 직접 말하는 한국어 반말 1~2문장으로 바꿔. 이 주제 밖 내용은 말하지 마.`,
         ttlMs: 30_000,
         requiresAck: false,
         destinations: ['*'],

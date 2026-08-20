@@ -2,15 +2,27 @@
 set -u
 
 RUN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-AIRI_BIN="${AIRI_BIN:-/opt/AIRI/airi}"
+AIRI_APP_DIR="${AIRI_APP_DIR:-$RUN_DIR/../apps/stage-tamagotchi}"
+AIRI_LOCAL_LAUNCHER="$RUN_DIR/airi-local"
+USE_LOCAL_AIRI=0
+
+if [ -n "${AIRI_BIN:-}" ]; then
+  :
+elif [ -x "$AIRI_LOCAL_LAUNCHER" ] && [ -f "$AIRI_APP_DIR/package.json" ]; then
+  AIRI_BIN="$AIRI_LOCAL_LAUNCHER"
+  USE_LOCAL_AIRI=1
+else
+  AIRI_BIN="/opt/AIRI/airi"
+fi
 if [ -n "${AIRI_TTS_PYTHON:-}" ]; then
   TTS_ENV="$AIRI_TTS_PYTHON"
 elif [ -x "$RUN_DIR/genie-tts-env/bin/python" ]; then
   TTS_ENV="$RUN_DIR/genie-tts-env/bin/python"
+elif [ -x "$HOME/genie-tts-env/bin/python" ]; then
+  TTS_ENV="$HOME/genie-tts-env/bin/python"
 else
   TTS_ENV="$RUN_DIR/.venv/bin/python"
 fi
-TTS_PY="$RUN_DIR/silver_wolf_tts_server.py"
 BRIDGE_JS="$RUN_DIR/airi_codex_bridge.mjs"
 GENIE_DATA_DIR="${GENIE_DATA_DIR:-$HOME/GenieData}"
 SPONTANEOUS_MIN_S="${AIRI_SPONTANEOUS_MIN_S:-60}"
@@ -23,6 +35,22 @@ CHARACTER="silver_wolf"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    -h|--help)
+      cat <<'EOF'
+Usage: airi <command> [options]
+
+Commands:
+  start           start AIRI + TTS + bridge (default)
+  stop            stop all AIRI processes
+  status          show ports and processes
+
+Options:
+  --silver_wolf   use Silver Wolf LV.999 (default)
+  --march7        use March 7th
+  -h, --help      show this help
+EOF
+      exit 0
+      ;;
     start|stop|status)
       ACTION="$1"
       ;;
@@ -49,9 +77,9 @@ configure_character() {
     silver_wolf)
       CHARACTER_NAME="은랑 LV.999"
       TTS_CHARACTER="silverwolf_lv999"
-      TTS_MODEL_DIR="${AIRI_TTS_MODEL_DIR:-$RUN_DIR/assets/silver_wolf_genie_onnx}"
-      TTS_REF_AUDIO="${AIRI_TTS_REF_AUDIO:-$RUN_DIR/assets/silver_wolf_clean_voice/extracted/archive_silverwolflv999_1.wav}"
-      TTS_REF_TEXT="${AIRI_TTS_REF_TEXT:-$RUN_DIR/assets/silver_wolf_clean_voice/extracted/archive_silverwolflv999_1.lab}"
+      TTS_MODEL_DIR="${AIRI_TTS_MODEL_DIR:-$HOME/silver_wolf_genie_onnx}"
+      TTS_REF_AUDIO="${AIRI_TTS_REF_AUDIO:-$HOME/silver_wolf_clean_voice/extracted/archive_silverwolflv999_1.wav}"
+      TTS_REF_TEXT="${AIRI_TTS_REF_TEXT:-$HOME/silver_wolf_clean_voice/extracted/archive_silverwolflv999_1.lab}"
       TTS_LANGUAGE="ko"
       ;;
     march7)
@@ -63,6 +91,7 @@ configure_character() {
       TTS_LANGUAGE="ko"
       ;;
   esac
+  TTS_PY="$RUN_DIR/code/characters/$TTS_CHARACTER/tts_server.py"
 }
 
 check_character_files() {
@@ -79,7 +108,7 @@ check_character_files() {
 
 stop_processes() {
   ps -eo pid=,args= |
-    awk '/\/opt\/AIRI\/airi|silver_wolf_tts_server\.py|airi_codex_bridge\.mjs/ && !/awk/ {print $1}' |
+    awk '/\/opt\/AIRI\/airi|stage-tamagotchi|tts_server\.py|airi_codex_bridge\.mjs/ && !/awk/ {print $1}' |
     xargs -r kill -9 2>/dev/null || true
 }
 
@@ -100,13 +129,23 @@ start_all() {
     exit 1
   fi
 
-  if ! "$RUN_DIR/ensure_airi_patches.py" >/dev/null 2>&1; then
-    echo "AIRI patch required. sudo password may be requested."
-    if command -v sudo >/dev/null 2>&1; then
-      sudo "$RUN_DIR/ensure_airi_patches.py" || exit 1
-    else
-      echo "run: sudo python3 $RUN_DIR/ensure_airi_patches.py" >&2
+  if [ "$USE_LOCAL_AIRI" -eq 1 ]; then
+    echo "building local AIRI..."
+    if ! (cd "$AIRI_APP_DIR" && pnpm run build); then
+      echo "AIRI build failed" >&2
       exit 1
+    fi
+  fi
+
+  if [ "$USE_LOCAL_AIRI" -eq 0 ]; then
+    if ! "$RUN_DIR/code/patches/ensure_airi_patches.py" >/dev/null 2>&1; then
+      echo "AIRI patch required. sudo password may be requested."
+      if command -v sudo >/dev/null 2>&1; then
+        sudo "$RUN_DIR/code/patches/ensure_airi_patches.py" || exit 1
+      else
+        echo "run: sudo python3 $RUN_DIR/code/patches/ensure_airi_patches.py" >&2
+        exit 1
+      fi
     fi
   fi
 
@@ -128,6 +167,7 @@ start_all() {
     tmux new-session -d -s "$TMUX_SESSION" -n tts \
       "env GENIE_DATA_DIR='$GENIE_DATA_DIR' AIRI_TTS_CHARACTER='$TTS_CHARACTER' AIRI_TTS_MODEL_DIR='$TTS_MODEL_DIR' AIRI_TTS_REF_AUDIO='$TTS_REF_AUDIO' AIRI_TTS_REF_TEXT='$TTS_REF_TEXT' AIRI_TTS_LANGUAGE='$TTS_LANGUAGE' '$TTS_ENV' '$TTS_PY'"
     echo "character: $CHARACTER_NAME"
+    echo "airi mode: $([ "$USE_LOCAL_AIRI" -eq 1 ] && echo local-source || echo installed)"
     echo "tmux session: $TMUX_SESSION"
   else
     nohup env \
@@ -175,7 +215,7 @@ status_all() {
   echo "--- ports ---"
   ss -ltn 2>/dev/null | grep -E ':6121|:8000' || echo "none"
   echo "--- processes ---"
-  ps -eo pid,args | grep -E '/opt/AIRI/airi|silver_wolf_tts_server\.py|airi_codex_bridge\.mjs' | grep -v grep || echo "none"
+  ps -eo pid,args | grep -E '/opt/AIRI/airi|stage-tamagotchi|tts_server\.py|airi_codex_bridge\.mjs' | grep -v grep || echo "none"
 }
 
 case "$ACTION" in

@@ -1,37 +1,29 @@
 import os
-import re
 import tempfile
 import threading
 import time
 import wave
 
-os.environ.setdefault("GENIE_DATA_DIR", "/home/swlinux/GenieData")
-os.environ["HF_HUB_ENABLE_PROGRESS_BAR"] = "0"
-
-import genie_tts as genie
 from fastapi import FastAPI
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from tts_engine import (
+    CHARACTER,
+    clean_spoken_text,
+    ensure_loaded,
+    shorten_spoken_text,
+    split_sentences,
+    synthesize_sentences,
+)
 
-CHARACTER = os.getenv("AIRI_TTS_CHARACTER", "silverwolf_lv999")
-MODEL_DIR = os.getenv("AIRI_TTS_MODEL_DIR", "/home/swlinux/silver_wolf_genie_onnx")
-REF_AUDIO = os.getenv(
-    "AIRI_TTS_REF_AUDIO",
-    "/home/swlinux/silver_wolf_clean_voice/extracted/archive_silverwolflv999_1.wav",
-)
-REF_TEXT_PATH = os.getenv(
-    "AIRI_TTS_REF_TEXT",
-    "/home/swlinux/silver_wolf_clean_voice/extracted/archive_silverwolflv999_1.lab",
-)
-LANGUAGE = os.getenv("AIRI_TTS_LANGUAGE", "ko")
+
 SPOKEN_LOG = os.getenv("AIRI_SPOKEN_LOG", "/home/swlinux/airi_spoken.log")
 
 _lock = threading.Lock()
 _busy_lock = threading.Lock()
 _busy = False
 _busy_until = 0.0
-_ready = False
 
 
 class SpeechRequest(BaseModel):
@@ -40,28 +32,6 @@ class SpeechRequest(BaseModel):
     voice: str = CHARACTER
     response_format: str = "wav"
     speed: float = 1.0
-
-
-def _clean_spoken_text(text: str) -> str:
-    text = text.replace("\ufeff", "")
-    text = re.sub(r"^\s*(?:\*\*)?(?:시작|끝|start|end)(?:\*\*)?\s*$", "", text, flags=re.IGNORECASE | re.MULTILINE)
-    text = re.sub(r"!?\[[^\]]*\]\([^)]*\)", "", text)
-    text = re.sub(r"\[이미지로\]", "", text)
-    text = re.sub(r"^\s*(?:>{1,}|#{1,6})\s?", "", text, flags=re.MULTILINE)
-    text = re.sub(r"\*\*|__|~~|`", "", text)
-    text = re.sub(r"[^\w\s.,!?%\-—–~…:;()'\"가-힣]", " ", text)
-    return re.sub(r"\s+", " ", text).strip()
-
-
-def _ensure_loaded():
-    global _ready
-    if _ready:
-        return
-    with open(REF_TEXT_PATH, encoding="utf-8") as f:
-        ref_text = f.read().strip()
-    genie.load_character(CHARACTER, MODEL_DIR, LANGUAGE)
-    genie.set_reference_audio(CHARACTER, REF_AUDIO, ref_text, LANGUAGE)
-    _ready = True
 
 
 app = FastAPI()
@@ -94,7 +64,7 @@ def speech(req: SpeechRequest):
     if not req.input.strip():
         return Response(status_code=400)
 
-    spoken_text = _clean_spoken_text(req.input)
+    spoken_text = shorten_spoken_text(clean_spoken_text(req.input))
     if not spoken_text:
         return Response(status_code=400)
 
@@ -112,16 +82,9 @@ def speech(req: SpeechRequest):
 
     try:
         with _lock:
-            _ensure_loaded()
             fd, path = tempfile.mkstemp(suffix=".wav")
             os.close(fd)
-            genie.tts(
-                character_name=CHARACTER,
-                text=spoken_text,
-                play=False,
-                split_sentence=False,
-                save_path=path,
-            )
+            synthesize_sentences(split_sentences(spoken_text), path)
 
         with wave.open(path, "rb") as wav_file:
             duration = wav_file.getnframes() / wav_file.getframerate()
@@ -147,5 +110,5 @@ def speech(req: SpeechRequest):
 if __name__ == "__main__":
     import uvicorn
 
-    threading.Thread(target=_ensure_loaded, daemon=True).start()
+    threading.Thread(target=ensure_loaded, daemon=True).start()
     uvicorn.run(app, host="127.0.0.1", port=8000)

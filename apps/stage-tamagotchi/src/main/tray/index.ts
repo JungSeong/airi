@@ -232,7 +232,7 @@ export function setupTray(params: {
           ]),
         },
         { type: 'separator' },
-        ...is.dev || env.MAIN_APP_DEBUG || env.APP_DEBUG
+        ...(is.dev && !env.AIRI_DISABLE_DEVTOOLS) || env.MAIN_APP_DEBUG || env.APP_DEBUG
           ? [
               { type: 'header', label: params.i18n.t('tamagotchi.electron.tray.menu.labels.label.devtools') },
               { label: params.i18n.t('tamagotchi.electron.tray.menu.labels.label.troubleshoot_beatsync'), click: () => params.beatSyncBgWindow.webContents.openDevTools({ mode: 'detach' }) },

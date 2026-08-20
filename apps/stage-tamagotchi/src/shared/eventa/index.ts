@@ -318,6 +318,24 @@ export interface ElectronMcpStdioTestPayload {
   config: ElectronMcpStdioServerConfig
 }
 
+export interface ElectronDailyBriefing {
+  id: string
+  date: string
+  text: string
+  createdAt: number
+  readAt?: number
+  audioPath?: string
+}
+
+export interface ElectronDailyBriefingListResult {
+  briefings: ElectronDailyBriefing[]
+}
+
+export interface ElectronDailyBriefingPlayResult {
+  briefing?: ElectronDailyBriefing
+  audioBase64?: string
+}
+
 export const electronMcpOpenConfigFile = defineInvokeEventa<{ path: string }>('eventa:invoke:electron:mcp:open-config-file')
 export const electronMcpApplyAndRestart = defineInvokeEventa<ElectronMcpStdioApplyResult>('eventa:invoke:electron:mcp:apply-and-restart')
 export const electronMcpGetRuntimeStatus = defineInvokeEventa<ElectronMcpStdioRuntimeStatus>('eventa:invoke:electron:mcp:get-runtime-status')
@@ -326,6 +344,9 @@ export const electronMcpCallTool = defineInvokeEventa<ElectronMcpCallToolResult,
 export const electronMcpReadConfigText = defineInvokeEventa<ElectronMcpStdioConfigText>('eventa:invoke:electron:mcp:read-config-text')
 export const electronMcpWriteConfigText = defineInvokeEventa<ElectronMcpStdioConfigText, { text: string }>('eventa:invoke:electron:mcp:write-config-text')
 export const electronMcpTestServer = defineInvokeEventa<ElectronMcpStdioTestResult, ElectronMcpStdioTestPayload>('eventa:invoke:electron:mcp:test-server')
+export const electronOpenDailyBriefing = defineInvokeEventa<void>('eventa:invoke:electron:windows:daily-briefing:open')
+export const electronDailyBriefingList = defineInvokeEventa<ElectronDailyBriefingListResult>('eventa:invoke:electron:daily-briefing:list')
+export const electronDailyBriefingPlay = defineInvokeEventa<ElectronDailyBriefingPlayResult, { id: string }>('eventa:invoke:electron:daily-briefing:play')
 
 export const widgetsOpenWindow = defineInvokeEventa<void, { id?: string }>('eventa:invoke:electron:windows:widgets:open')
 export const widgetsHideWindow = defineInvokeEventa<void, { id?: string }>('eventa:invoke:electron:windows:widgets:hide')

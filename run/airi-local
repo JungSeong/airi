@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -u
+
+RUN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="${AIRI_APP_DIR:-$RUN_DIR/../apps/stage-tamagotchi}"
+ELECTRON_BIN="${AIRI_ELECTRON_BIN:-$APP_DIR/node_modules/.bin/electron}"
+
+export APP_USER_DATA_PATH="${APP_USER_DATA_PATH:-$HOME/.config/ai.moeru.airi}"
+export AIRI_DISABLE_DEVTOOLS="${AIRI_DISABLE_DEVTOOLS:-1}"
+unset VSCODE_CWD
+unset ESLINT
+
+if [ ! -x "$ELECTRON_BIN" ]; then
+  echo "electron not found: $ELECTRON_BIN" >&2
+  exit 1
+fi
+
+exec "$ELECTRON_BIN" "$APP_DIR" "$@"

@@ -16,6 +16,11 @@ docs:
   'open-chat': 채팅 열기
   'refresh': 새로고침
   'center-main-window': Move to screen center
+  'daily-briefing': 데일리 브리핑
+  'daily-briefing-unread': '미청취 {count}개'
+  'daily-briefing-empty': 데일리 브리핑이 없습니다
+  'daily-briefing-unavailable': 데일리 브리핑이 없습니다
+  'daily-briefing-failed': 데일리 브리핑을 재생하지 못했습니다
   'open-hearing-controls': 듣기 제어 열기
   'drag-to-move-window': 드레그하여 창 이동
   'stop-speaking': 말하기 중지

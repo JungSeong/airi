@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { ElectronDailyBriefing } from '../../../../shared/eventa'
+
 import { defineInvoke } from '@moeru/eventa'
 import { useElectronEventaContext, useElectronEventaInvoke, useElectronMouseInElement } from '@proj-airi/electron-vueuse'
 import { IS_DEV } from '@proj-airi/stage-shared'
@@ -23,7 +25,10 @@ import {
   electron,
   electronAppQuit,
   electronCenterMainWindow,
+
+  electronDailyBriefingList,
   electronOpenChat,
+  electronOpenDailyBriefing,
   electronOpenSettings,
   electronStartDraggingWindow,
   electronWindowSetAlwaysOnTop,
@@ -43,11 +48,17 @@ const isLinux = useElectronEventaInvoke(electron.app.isLinux)
 const quitApp = useElectronEventaInvoke(electronAppQuit)
 const setAlwaysOnTop = useElectronEventaInvoke(electronWindowSetAlwaysOnTop)
 const centerMainWindow = useElectronEventaInvoke(electronCenterMainWindow)
+const listDailyBriefings = useElectronEventaInvoke(electronDailyBriefingList)
+const openDailyBriefingWindow = useElectronEventaInvoke(electronOpenDailyBriefing)
 
 const expanded = ref(false)
 const islandRef = ref<HTMLElement>()
 
+const dailyBriefings = ref<ElectronDailyBriefing[]>([])
+const dailyBriefingUnreadCount = computed(() => dailyBriefings.value.filter(briefing => !briefing.readAt).length)
+const dailyBriefingBadgeLabel = computed(() => dailyBriefingUnreadCount.value > 99 ? '99+' : String(dailyBriefingUnreadCount.value))
 // Tracks open overlays/dialogs that should prevent auto-collapse (e.g. 'hearing', 'profile-picker')
+
 const blockingOverlays = reactive(new Set<string>())
 const isBlocked = computed(() => blockingOverlays.size > 0)
 
@@ -60,6 +71,17 @@ function setOverlay(key: string, active: boolean) {
   blockingOverlays.delete(key)
 }
 
+async function refreshDailyBriefings() {
+  try {
+    const result = await listDailyBriefings()
+    dailyBriefings.value = result?.briefings ?? []
+  }
+  catch (error) {
+    console.error('[DailyBriefing] failed to list briefings', error)
+  }
+}
+
+useIntervalFn(() => void refreshDailyBriefings(), 2_000, { immediateCallback: true })
 // Expose for parent (e.g. to disable click-through when a dialog is open)
 defineExpose({
   get hearingDialogOpen() { return blockingOverlays.has('hearing') },
@@ -76,9 +98,8 @@ watch(isOutsideAfter2seconds, (outside) => {
 })
 
 watch(expanded, (isExpanded) => {
-  if (!isExpanded) {
+  if (!isExpanded)
     blockingOverlays.clear()
-  }
 })
 
 useIntervalFn(() => {
@@ -144,6 +165,11 @@ function refreshWindow() {
 function resetMainWindowPosition() {
   centerMainWindow().catch(console.error)
 }
+
+function openDailyBriefings() {
+  expanded.value = false
+  openDailyBriefingWindow().catch(console.error)
+}
 </script>
 
 <template>
@@ -192,6 +218,30 @@ function resetMainWindowPosition() {
               </ControlsIslandProfilePicker>
               <template #tooltip>
                 {{ t('tamagotchi.stage.controls-island.switch-profile') }}
+              </template>
+            </ControlButtonTooltip>
+
+            <ControlButtonTooltip disable-hoverable-content>
+              <ControlButton
+                v-track-button="{ name: 'controls_island_action', action: 'open_daily_briefings' }"
+                class="relative"
+                :button-style="adjustStyleClasses.button"
+                :aria-label="t('tamagotchi.stage.controls-island.daily-briefing')"
+                @click="openDailyBriefings"
+              >
+                <div :class="[adjustStyleClasses.icon, 'i-solar:calendar-mark-bold-duotone text-neutral-800 dark:text-neutral-300']" />
+                <span
+                  v-if="dailyBriefingUnreadCount"
+                  :class="[
+                    'pointer-events-none absolute -right-1 -top-1 h-4 min-w-4 rounded-full px-1',
+                    'flex items-center justify-center bg-red-500 text-[10px] text-white font-bold leading-none',
+                  ]"
+                >
+                  {{ dailyBriefingBadgeLabel }}
+                </span>
+              </ControlButton>
+              <template #tooltip>
+                {{ t('tamagotchi.stage.controls-island.daily-briefing') }}
               </template>
             </ControlButtonTooltip>
 

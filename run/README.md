@@ -21,13 +21,23 @@ run/assets/silver_wolf_clean_voice/extracted/archive_silverwolflv999_1.lab
 cd run
 python3 -m venv .venv
 .venv/bin/pip install fastapi uvicorn pydantic onnxruntime genie-tts
-sudo python3 patch_airi_allow_no_response.py
+sudo python3 code/patches/ensure_airi_patches.py
 ```
 
 `genie-tts` 설치 방식은 환경에 따라 다르다. 기존 `genie-tts-env`를 그대로 쓰려면:
 
 ```bash
 export AIRI_TTS_PYTHON=/path/to/genie-tts-env/bin/python
+```
+
+## 코드 레이아웃
+
+Python 코드는 `code/` 아래 기능별로 모은다. 세부 규칙은 [code/README.md](code/README.md) 참고.
+
+```text
+code/
+  characters/<character-slug>/   # TTS 서버, 브리핑 생성
+  patches/                       # AIRI 앱 패치
 ```
 
 ## 실행
@@ -38,6 +48,8 @@ cd run
 AIRI_SPONTANEOUS_MIN_S=60 AIRI_SPONTANEOUS_MAX_S=300 ./airi --silver_wolf start
 tmux attach -t airi-bridge
 ```
+
+`start`는 로컬 `stage-tamagotchi` 소스를 빌드한 뒤 해당 빌드를 실행한다.
 
 ## AIRI 음성 provider 설정
 

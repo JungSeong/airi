@@ -16,6 +16,11 @@ docs:
   'open-chat': Open Chat
   'refresh': Refresh
   'center-main-window': Move to screen center
+  'daily-briefing': Daily briefings
+  'daily-briefing-unread': '{count} unread'
+  'daily-briefing-empty': No daily briefings
+  'daily-briefing-unavailable': No daily briefing available
+  'daily-briefing-failed': Failed to play daily briefing
   'open-hearing-controls': Open hearing Controls
   'drag-to-move-window': Drag to move window
   'stop-speaking': Stop speaking

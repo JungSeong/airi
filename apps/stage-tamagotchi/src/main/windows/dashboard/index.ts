@@ -81,7 +81,7 @@ export async function setupDashboardWindow(params: {
   }
 
   // NOTICE: in development mode, open devtools by default
-  if (is.dev || env.MAIN_APP_DEBUG || env.APP_DEBUG) {
+  if ((is.dev && !env.AIRI_DISABLE_DEVTOOLS) || env.MAIN_APP_DEBUG || env.APP_DEBUG) {
     try {
       window.webContents.openDevTools({ mode: 'detach' })
     }

@@ -15,6 +15,7 @@ export type ControlsIslandAction
     | 'switch_to_dark_mode'
     | 'pin_on_top'
     | 'unpin_from_top'
+    | 'open_daily_briefings'
     | 'enable_fade_on_hover'
     | 'disable_fade_on_hover'
     | 'close_app'
